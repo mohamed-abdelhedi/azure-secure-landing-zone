@@ -1,0 +1,8 @@
+# Example terraform.tfvars file for development environment
+# Copy this file to terraform.tfvars and customize values
+
+location    = "eastus"
+environment = "dev"
+owner       = "Your Name"
+cost_center = "IT-Infrastructure"
+project     = "Azure Landing Zone"
