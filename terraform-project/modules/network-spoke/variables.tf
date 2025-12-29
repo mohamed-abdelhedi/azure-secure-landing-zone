@@ -54,3 +54,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "use_remote_gateways" {
+  description = "Whether to use the hub's VPN gateway. Set to false if hub has no gateway."
+  type        = bool
+  default     = false
+}

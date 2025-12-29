@@ -3,7 +3,7 @@ terraform {
   
   backend "azurerm" {
     resource_group_name  = "rg-terraform-state-prod"
-    storage_account_name = "sttfstateproXXXX"  # Replace XXXX with unique suffix
+    storage_account_name = "sttfstatepro12345"
     container_name       = "tfstate"
     key                  = "dev.terraform.tfstate"
   }

@@ -58,6 +58,7 @@ module "app_spoke" {
   
   environment = var.environment
   tags        = local.common_tags
+  use_remote_gateways = false  # No VPN gateway in dev
   
   depends_on = [module.hub_network]
 }
@@ -93,6 +94,7 @@ module "data_spoke" {
   
   environment = var.environment
   tags        = local.common_tags
+  use_remote_gateways = false  # No VPN gateway in dev
   
   depends_on = [module.hub_network]
 }

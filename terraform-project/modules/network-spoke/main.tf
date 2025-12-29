@@ -87,7 +87,7 @@ resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   remote_virtual_network_id = var.hub_vnet_id
   allow_forwarded_traffic   = true
   allow_gateway_transit     = false
-  use_remote_gateways       = true  # Use hub's VPN gateway
+  use_remote_gateways       = var.use_remote_gateways
 }
 
 # VNet Peering: Hub to Spoke (requires hub resource group)
