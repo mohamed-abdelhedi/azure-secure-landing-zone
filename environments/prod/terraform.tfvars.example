@@ -1,0 +1,9 @@
+# Example terraform.tfvars file for production environment
+# Copy this file to terraform.tfvars and customize values
+
+location    = "eastus"
+environment = "prod"
+owner       = "Platform Team"
+cost_center = "IT-Infrastructure"
+project     = "Landing Zone"
+admin_email = "secops@example.com"

@@ -1,0 +1,77 @@
+name: Security & Quality Gates
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main ]
+
+jobs:
+  terraform-lint-and-validate:
+    name: Terraform Lint & Validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Check Terraform Formatting
+        run: terraform fmt -check -recursive
+
+      - name: Initialize Terraform (${{ matrix.environment }})
+        working-directory: ./environments/${{ matrix.environment }}
+        run: terraform init -backend=false
+
+      - name: Validate Terraform Configuration (${{ matrix.environment }})
+        working-directory: ./environments/${{ matrix.environment }}
+        run: terraform validate
+
+  terraform-security-scan:
+    name: Checkov & Trivy IaC Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run Checkov Security Scanner
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: terraform
+          output_format: cli
+          soft_fail: true
+
+      - name: Run Trivy IaC Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy Results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  opa-policy-check:
+    name: OPA Policy Enforcement
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup OPA
+        uses: open-policy-agent/setup-opa@v2
+
+      - name: Run OPA Policy Tests
+        run: |
+          opa check policies/ -v

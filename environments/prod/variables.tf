@@ -7,7 +7,7 @@ variable "location" {
 variable "environment" {
   description = "Environment name"
   type        = string
-  default     = "dev"
+  default     = "prod"
 }
 
 variable "owner" {
@@ -28,6 +28,12 @@ variable "project" {
   default     = "Landing Zone"
 }
 
+variable "admin_email" {
+  description = "Administrator email address for operational and security alerts"
+  type        = string
+  default     = "secops@example.com"
+}
+
 locals {
   common_tags = {
     Environment = var.environment
@@ -35,6 +41,6 @@ locals {
     CostCenter  = var.cost_center
     Project     = var.project
     ManagedBy   = "Terraform"
-    Repository  = "github.com/yourorg/azure-landing-zone"
+    Repository  = "github.com/mohamed-abdelhedi/terraform"
   }
 }

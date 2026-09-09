@@ -3,6 +3,7 @@
 
 location    = "eastus"
 environment = "dev"
-owner       = "Your Name"
+owner       = "Platform Team"
 cost_center = "IT-Infrastructure"
-project     = "Azure Landing Zone"
+project     = "Landing Zone"
+admin_email = "admin@example.com"

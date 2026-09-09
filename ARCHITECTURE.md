@@ -15,6 +15,8 @@ This is a **production-grade, enterprise-scale cloud architecture** designed to 
 
 ## 🏗️ Architecture Overview
 
+![Azure Cloud Architecture 2025](docs/diagrams/modern_cloud_architecture_2025.png)
+
 ### **Why This Design is Trendy for 2025**
 
 | Component | Why It's Hot in 2025 |

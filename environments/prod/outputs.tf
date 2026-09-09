@@ -22,3 +22,18 @@ output "bastion_host_id" {
   description = "ID of the Bastion Host"
   value       = module.hub_network.bastion_host_id
 }
+
+output "vpn_gateway_id" {
+  description = "ID of the VPN Gateway"
+  value       = module.hub_network.vpn_gateway_id
+}
+
+output "log_analytics_workspace_id" {
+  description = "ID of the Central Log Analytics Workspace"
+  value       = module.monitoring.workspace_id
+}
+
+output "sentinel_onboarding_id" {
+  description = "ID of the Microsoft Sentinel Onboarding"
+  value       = module.monitoring.sentinel_onboarding_id
+}
