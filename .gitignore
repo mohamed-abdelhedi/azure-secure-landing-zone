@@ -54,3 +54,10 @@ trivy-results.sarif
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Local backend configuration and saved plans (may contain sensitive values)
+backend.hcl
+*.backend.hcl
+tfplan
+tfplan.json
+plan.json

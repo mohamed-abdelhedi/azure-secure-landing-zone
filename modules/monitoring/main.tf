@@ -22,6 +22,7 @@ resource "azurerm_monitor_action_group" "critical_alerts_action" {
   name                = "CriticalAlertsAction"
   resource_group_name = var.resource_group_name
   short_name          = "p0action"
+  tags                = var.tags
 
   email_receiver {
     name          = "sendtoadmin"

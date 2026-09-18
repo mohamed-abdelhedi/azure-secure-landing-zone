@@ -1,62 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Creates a state backend. Requires Azure resource and Blob Data Contributor access.
+set -euo pipefail
+RESOURCE_GROUP_NAME=${RESOURCE_GROUP_NAME:-rg-terraform-state}
+STORAGE_ACCOUNT_NAME=${STORAGE_ACCOUNT_NAME:-sttfstate$(openssl rand -hex 4)}
+CONTAINER_NAME=${CONTAINER_NAME:-tfstate}
+LOCATION=${LOCATION:-eastus}
 
-# Script to initialize Terraform backend storage in Azure
-# This creates the storage account for Terraform state files
+az account show --output none
+az group create --name "$RESOURCE_GROUP_NAME" --location "$LOCATION" --tags Purpose=TerraformState ManagedBy=Script --output none
+az storage account create --name "$STORAGE_ACCOUNT_NAME" --resource-group "$RESOURCE_GROUP_NAME" --location "$LOCATION" --sku Standard_LRS --https-only true --min-tls-version TLS1_2 --allow-blob-public-access false --allow-shared-key-access false --output none
+az storage account blob-service-properties update --account-name "$STORAGE_ACCOUNT_NAME" --resource-group "$RESOURCE_GROUP_NAME" --enable-versioning true --enable-delete-retention true --delete-retention-days 7 --output none
+az storage container create --name "$CONTAINER_NAME" --account-name "$STORAGE_ACCOUNT_NAME" --auth-mode login --public-access off --output none
 
-set -e
-
-# Variables - Customize these
-RESOURCE_GROUP_NAME="rg-terraform-state-prod"
-STORAGE_ACCOUNT_NAME="sttfstatepro$(openssl rand -hex 4)"  # Generates unique suffix
-CONTAINER_NAME="tfstate"
-LOCATION="eastus"
-
-echo "🚀 Initializing Terraform Backend..."
-echo "Resource Group: $RESOURCE_GROUP_NAME"
-echo "Storage Account: $STORAGE_ACCOUNT_NAME"
-echo "Location: $LOCATION"
-
-# Login to Azure (if not already logged in)
-az account show > /dev/null 2>&1 || az login
-
-# Create resource group
-echo "📦 Creating resource group..."
-az group create \
-  --name $RESOURCE_GROUP_NAME \
-  --location $LOCATION \
-  --tags Purpose="Terraform State" ManagedBy="Script"
-
-# Create storage account
-echo "💾 Creating storage account..."
-az storage account create \
-  --name $STORAGE_ACCOUNT_NAME \
-  --resource-group $RESOURCE_GROUP_NAME \
-  --location $LOCATION \
-  --sku Standard_LRS \
-  --encryption-services blob \
-  --https-only true \
-  --min-tls-version TLS1_2 \
-  --allow-blob-public-access false
-
-# Get storage account key
-ACCOUNT_KEY=$(az storage account keys list \
-  --resource-group $RESOURCE_GROUP_NAME \
-  --account-name $STORAGE_ACCOUNT_NAME \
-  --query '[0].value' -o tsv)
-
-# Create blob container
-echo "📂 Creating blob container..."
-az storage container create \
-  --name $CONTAINER_NAME \
-  --account-name $STORAGE_ACCOUNT_NAME \
-  --account-key $ACCOUNT_KEY
-
-echo ""
-echo "✅ Terraform backend initialized successfully!"
-echo ""
-echo "📋 Update your backend.tf with these values:"
-echo "-------------------------------------------"
-echo "resource_group_name  = \"$RESOURCE_GROUP_NAME\""
-echo "storage_account_name = \"$STORAGE_ACCOUNT_NAME\""
-echo "container_name       = \"$CONTAINER_NAME\""
-echo "-------------------------------------------"
+printf 'Backend created. Copy these values into the environment backend.hcl:\n'
+printf 'resource_group_name = "%s"\nstorage_account_name = "%s"\ncontainer_name = "%s"\nuse_azuread_auth = true\n' "$RESOURCE_GROUP_NAME" "$STORAGE_ACCOUNT_NAME" "$CONTAINER_NAME"
+printf 'Keep a separate state key per environment. No role assignments were created.\n'

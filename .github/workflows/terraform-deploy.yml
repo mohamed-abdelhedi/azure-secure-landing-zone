@@ -1,54 +1,102 @@
-name: Terraform Deploy
+name: Terraform Plan or Apply
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Target Environment to Deploy'
+        description: Target environment
         required: true
         type: choice
-        default: 'dev'
-        options:
-          - dev
-          - prod
+        options: [dev, prod]
+        default: dev
+      action:
+        description: Plan only, or explicitly apply after all checks
+        required: true
+        type: choice
+        options: [plan, apply]
+        default: plan
 
-env:
-  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ inputs.environment }}
+  cancel-in-progress: false
 
 jobs:
+  quality:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/security-scan.yml
+
   deploy:
-    name: Deploy to ${{ github.event.inputs.environment }}
+    needs: quality
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
-
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      ARM_USE_OIDC: 'true'
+      ARM_USE_AZUREAD: 'true'
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      TF_IN_AUTOMATION: 'true'
+      TF_VAR_admin_email: ${{ vars.ALERT_EMAIL }}
+      TARGET_ENVIRONMENT: ${{ inputs.environment }}
+      REQUESTED_ACTION: ${{ inputs.action }}
+      BACKEND_RESOURCE_GROUP: ${{ vars.BACKEND_RESOURCE_GROUP }}
+      BACKEND_STORAGE_ACCOUNT: ${{ vars.BACKEND_STORAGE_ACCOUNT }}
+      BACKEND_CONTAINER: ${{ vars.BACKEND_CONTAINER }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: environments/${{ inputs.environment }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
-          terraform_version: 1.6.0
-
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
-
-      - name: Terraform Init
-        working-directory: ./environments/${{ github.event.inputs.environment }}
-        run: terraform init
-
-      - name: Terraform Validate
-        working-directory: ./environments/${{ github.event.inputs.environment }}
-        run: terraform validate
-
-      - name: Terraform Plan
-        working-directory: ./environments/${{ github.event.inputs.environment }}
-        run: terraform plan -out=tfplan
-
-      - name: Terraform Apply
-        if: github.event.inputs.environment == 'dev' || github.ref == 'refs/heads/main'
-        working-directory: ./environments/${{ github.event.inputs.environment }}
-        run: terraform apply -auto-approve tfplan
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: open-policy-agent/setup-opa@34a30e8a924d1b03ce2cf7abe97250bbb1f332b5 # v2
+        with:
+          version: 1.20.2
+      - name: Require configured identity, backend and production approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for setting in ARM_CLIENT_ID ARM_TENANT_ID ARM_SUBSCRIPTION_ID BACKEND_RESOURCE_GROUP BACKEND_STORAGE_ACCOUNT BACKEND_CONTAINER TF_VAR_admin_email; do
+            test -n "${!setting}" || { echo "Missing environment variable: $setting"; exit 1; }
+          done
+          if [[ "$TARGET_ENVIRONMENT" == prod && "$REQUESTED_ACTION" == apply ]]; then
+            gh api "repos/$REPOSITORY/environments/prod" > "$RUNNER_TEMP/prod-environment.json"
+            jq -e '.protection_rules | any(.type == "required_reviewers" and (.reviewers | length > 0))' "$RUNNER_TEMP/prod-environment.json"
+          fi
+      - name: Initialize backend
+        run: |
+          terraform init -input=false -lockfile=readonly \
+            -backend-config="resource_group_name=$BACKEND_RESOURCE_GROUP" \
+            -backend-config="storage_account_name=$BACKEND_STORAGE_ACCOUNT" \
+            -backend-config="container_name=$BACKEND_CONTAINER" \
+            -backend-config="key=$TARGET_ENVIRONMENT.terraform.tfstate" \
+            -backend-config="use_azuread_auth=true"
+      - run: terraform validate
+      - name: Plan and enforce policies before any apply
+        run: |
+          set -euo pipefail
+          trap 'rm -f tfplan.json' EXIT
+          terraform plan -input=false -out=tfplan
+          terraform show -json tfplan > tfplan.json
+          node ../../scripts/check-plan.mjs tfplan.json
+      - name: Apply the checked plan
+        if: inputs.action == 'apply'
+        run: terraform apply -input=false tfplan
+      - name: Remove local plan files
+        if: always()
+        run: rm -f tfplan tfplan.json

@@ -1,292 +1,148 @@
-<div align="center">
+# Azure Secure Landing Zone
 
-# 🛡️ Azure Enterprise Zero Trust Landing Zone
-### Production-Grade Infrastructure as Code (Terraform) with FinOps & DevSecOps
+[![Security and quality](https://github.com/mohamed-abdelhedi/azure-secure-landing-zone/actions/workflows/security-scan.yml/badge.svg)](https://github.com/mohamed-abdelhedi/azure-secure-landing-zone/actions/workflows/security-scan.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.6.0-844FBA?style=for-the-badge&logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![Azure](https://img.shields.io/badge/Microsoft%20Azure-Cloud-0078D4?style=for-the-badge&logo=microsoft-azure&logoColor=white)](https://azure.microsoft.com/)
-[![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)](https://github.com/features/actions)
-[![Checkov](https://img.shields.io/badge/Security-Checkov%20IaC-2C3E50?style=for-the-badge&logo=bridgecrew&logoColor=white)](https://www.checkov.io/)
-[![Trivy](https://img.shields.io/badge/Vulnerability-Trivy-199FBA?style=for-the-badge&logo=aquasecurity&logoColor=white)](https://trivy.dev/)
-[![OPA](https://img.shields.io/badge/Policy-OPA%20%2F%20Rego-7D9C9F?style=for-the-badge&logo=open-policy-agent&logoColor=white)](https://www.openpolicyagent.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
+A Terraform reference implementation of Azure hub-and-spoke networking, centralized firewall inspection, and Microsoft Sentinel onboarding. Built to demonstrate cloud security engineering with reproducible tests and policy checks.
 
-<br/>
+**Terraform · Azure · Microsoft Sentinel · OPA · GitHub Actions**
 
-**A production-ready, enterprise-scale cloud architecture implementing the Azure Cloud Adoption Framework (CAF), Zero Trust Network Architecture, Shift-Left DevSecOps, and FinOps cost governance.**
+[Architecture](ARCHITECTURE.md) · [Local validation](#validate-without-an-azure-account) · [Deployment](#deploy-to-your-own-azure-subscription) · [Security model](SECURITY.md)
 
-[Architecture Overview](#-architecture-overview) •
-[Network Topography](#-network-topology--ip-scheme) •
-[Security & DevSecOps](#-shift-left-devsecops--governance) •
-[Multi-Environment](#-multi-environment-matrix) •
-[Quick Start](#-quick-start-guide) •
-[Deep Dive Guide](ARCHITECTURE.md)
+## What this project implements
 
-</div>
+- A hub VNet and two peered spoke VNets, with workload subnets, NSGs, and default outbound routes through Azure Firewall.
+- Azure Firewall with a policy, threat intelligence in Deny mode, and Premium IDPS in Deny mode for the production configuration.
+- Azure Bastion with its required NSG rules; an optional VPN gateway with BGP.
+- Log Analytics, Sentinel workspace onboarding, an email action group, and Firewall diagnostic logs and metrics sent to the workspace.
+- OPA policies that evaluate Terraform plan JSON for required tags, permitted regions, private storage settings, and Premium IDPS.
+- Credential-free Terraform mock tests, policy regression tests, and blocking Checkov and Trivy scans.
 
----
+This is a tested reference configuration, not a certified or fully deployed enterprise landing zone. Azure deployment, connectivity, log delivery, and workload behavior still need validation in your subscription.
 
-## 📸 Architecture Visualizations
+## Architecture
 
-### High-Level Cloud Architecture
-The architecture is structured around a centralized **Hub-and-Spoke topology**, enforcing perimeter inspection, micro-segmentation, private data endpoints, and automated SIEM threat detection.
-
-<div align="center">
-  <img src="docs/diagrams/modern_cloud_architecture_2025.png" alt="Azure Zero Trust Landing Zone Architecture" width="95%"/>
-</div>
-
----
-
-## 🌟 Core Architectural Pillars
-
-- 🔒 **Zero Trust Network Architecture**:
-  - Centralized **Azure Firewall Premium** with IDPS (Intrusion Detection and Prevention) & TLS Inspection.
-  - Forced tunneling (`0.0.0.0/0`) on all spokes routing through the Hub Firewall.
-  - Zero public IP exposure for data tier resources via **Azure Private Link** and **Private Endpoints**.
-  - **Azure Bastion** for credential-less, encrypted RDP/SSH administrative access.
-- 🚀 **Cloud-Native & Hybrid Connectivity**:
-  - **App Spoke (`10.1.0.0/16`)**: Dedicated subnets for Azure Kubernetes Service (AKS) with Calico network policies and Application Gateway WAF v2.
-  - **Data Spoke (`10.2.0.0/16`)**: Hardened subnets for Azure SQL, Cosmos DB, and Data Lake Gen2 storage.
-  - **Hybrid Integration**: Virtual Network Gateway supporting Site-to-Site VPN and ExpressRoute with dynamic BGP routing.
-- 🛡️ **Shift-Left DevSecOps**:
-  - Automated CI/CD quality gates verifying code formatting (`terraform fmt`), syntax validation, and policy compliance.
-  - Static security analysis with **Checkov** (750+ IaC rules) and **Trivy** vulnerability scanning.
-  - Guardrail enforcement with **Open Policy Agent (OPA)** Rego policies before deployment.
-- 🤖 **AI-Driven SIEM / SOAR**:
-  - Unified logging via **Log Analytics Workspace**.
-  - Threat detection, automated hunting, and incident response playbooks powered by **Microsoft Sentinel**.
-- 💰 **FinOps & Cost Governance**:
-  - Strict tagging policies enforced at the IaC and policy level (Environment, Owner, CostCenter, Project).
-  - Environment-specific SKU sizing (cost-efficient Standard tier in `dev`, high-availability Premium with IDPS in `prod`).
-
----
-
-## 🌐 Network Topology & IP Scheme
-
-```
-                              ┌──────────────────────────────────┐
-                              │           Internet / Users       │
-                              └─────────────────┬────────────────┘
-                                                │ HTTPS
-                                                ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  🏢 HUB VNet (10.0.0.0/16) - Central Security Command Center                                    │
-│  ├── AzureFirewallSubnet (10.0.0.0/26)      --> Azure Firewall Premium (IDPS & TLS Inspection)  │
-│  ├── GatewaySubnet       (10.0.1.0/26)      --> VPN Gateway / ExpressRoute (BGP ASN 65515)     │
-│  └── AzureBastionSubnet  (10.0.2.0/26)      --> Azure Bastion Host                              │
-└───────────────────────┬─────────────────────────────────────────┬───────────────────────────────┘
-                        │ VNet Peering (Bidirectional)            │ VNet Peering (Bidirectional)
-                        ▼                                         ▼
-┌──────────────────────────────────────────────┐  ┌──────────────────────────────────────────────┐
-│  🚀 APP SPOKE VNet (10.1.0.0/16)             │  │  📊 DATA SPOKE VNet (10.2.0.0/16)            │
-│  ├── snet-aks-xxx    (10.1.0.0/22 - 1,024 IPs)│  │  ├── snet-data-xxx        (10.2.0.0/24)      │
-│  │   └─ Azure Kubernetes Service Workloads   │  │  │   └─ Azure SQL / Cosmos DB Workloads      │
-│  ├── snet-appgw-xxx  (10.1.4.0/24 - 256 IPs) │  │  ├── snet-privatelink-xxx (10.2.1.0/24)      │
-│  │   └─ Application Gateway & WAF v2         │  │  │   └─ Private Endpoints for PaaS Services  │
-│  └── UDR: 0.0.0.0/0 -> Azure Firewall IP     │  │  └── UDR: 0.0.0.0/0 -> Azure Firewall IP     │
-└──────────────────────────────────────────────┘  └──────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    CI[GitHub Actions: tests and security scans] --> PLAN[Terraform plan]
+    PLAN --> OPA[OPA policy gate]
+    OPA --> APPLY[Explicit apply]
+    subgraph Azure
+      HUB[Hub VNet: Firewall, Bastion, optional VPN]
+      APP[App spoke: subnets and NSGs]
+      DATA[Data spoke: subnets and NSGs]
+      APP -->|Default outbound route| HUB
+      DATA -->|Default outbound route| HUB
+      HUB -->|Firewall diagnostics| LAW[Log Analytics]
+      LAW --> SENTINEL[Sentinel workspace onboarding]
+    end
+    APPLY --> Azure
 ```
 
-### Low-Level Network Addressing Diagram
-<div align="center">
-  <img src="docs/diagrams/network_addressing_diagram.png" alt="Network Addressing Diagram" width="90%"/>
-</div>
+The app and data subnet names reserve space for future workloads. **AKS, Application Gateway/WAF, SQL, Cosmos DB, private endpoints, ExpressRoute, TLS inspection, Sentinel detection rules, and SOAR playbooks are not deployed.** Existing PNG diagrams in `docs/diagrams` are earlier design concepts, not the implemented resource inventory.
 
-### Detailed Subnet Allocation Table
+| Configuration | Development | Production |
+| :--- | :--- | :--- |
+| Firewall | Standard | Premium, IDPS Deny |
+| Threat intelligence | Deny | Deny |
+| Bastion | Standard + NSG | Standard + NSG |
+| VPN gateway | Disabled | VpnGw2, BGP enabled |
+| Log retention | 30 days | 90 days |
+| Terraform state | Separate dev key | Separate prod key |
 
-| Network | Subnet Name | CIDR Range | Usable IPs | Purpose / Workload |
-| :--- | :--- | :--- | :--- | :--- |
-| **Hub VNet** | `AzureFirewallSubnet` | `10.0.0.0/26` | 59 | Azure Firewall Private IP (`10.0.0.4`) |
-| **Hub VNet** | `GatewaySubnet` | `10.0.1.0/26` | 59 | S2S VPN / ExpressRoute Virtual Network Gateway |
-| **Hub VNet** | `AzureBastionSubnet` | `10.0.2.0/26` | 59 | Azure Bastion secure remote management |
-| **App Spoke** | `snet-aks-{env}` | `10.1.0.0/22` | 1,019 | AKS cluster nodes and pod IP allocation |
-| **App Spoke** | `snet-appgw-{env}` | `10.1.4.0/24` | 251 | Application Gateway ingress with WAF rules |
-| **Data Spoke** | `snet-data-{env}` | `10.2.0.0/24` | 251 | Database engines, analytics, and private storage |
-| **Data Spoke** | `snet-privatelink-{env}`| `10.2.1.0/24` | 251 | Private Link network interface endpoints |
+Default address ranges are `10.0.0.0/16` (hub), `10.1.0.0/16` (app), and `10.2.0.0/16` (data). Dev and prod reuse these ranges and must remain isolated; redesign addressing before connecting them.
 
----
+## Repository layout
 
-## 🎯 Multi-Environment Matrix
-
-To balance cost-efficiency in lower environments with enterprise resiliency in production, resources are parameterized per environment:
-
-| Feature / Resource | Development (`dev`) | Production (`prod`) | Rationale |
-| :--- | :--- | :--- | :--- |
-| **Azure Firewall SKU** | `Standard` | `Premium` | Standard provides L3-L7 filtering; Premium enables IDPS & TLS inspection. |
-| **Intrusion Detection (IDPS)** | Disabled | `Alert & Deny` | Production workloads require strict packet inspection. |
-| **VPN Gateway** | Disabled (Cost savings) | `Enabled` (`VpnGw2`, BGP) | Enables secure S2S hybrid tunnel to On-Premise datacenter. |
-| **Remote Gateway Transit** | `false` | `true` | Allows Spoke networks to utilize Hub VPN Gateway. |
-| **Log Analytics Retention** | `30 Days` | `90 Days` (Extendable) | Dev prioritizes cost; Prod satisfies compliance & audit retention. |
-| **Microsoft Sentinel** | Enabled | Enabled | Centralized security analytics across all environments. |
-| **Bastion Host** | Standard SKU | Standard SKU | Secure management access without public IP exposure. |
-
----
-
-## 🛡️ Shift-Left DevSecOps & Governance
-
-Security is baked directly into the development workflow using automated CI/CD checks:
-
-```
-[Developer Git Push]
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ GitHub Actions CI Workflow: Security & Quality Gates        │
-├──────────────────────────────┬──────────────────────────────┤
-│ 🔍 Code Quality & Syntax     │ terraform fmt -check         │
-│                              │ terraform validate           │
-├──────────────────────────────┼──────────────────────────────┤
-│ 🛡️ IaC Security Scanning     │ Checkov (750+ CIS benchmarks)│
-│                              │ Trivy (Config Vulnerability) │
-├──────────────────────────────┼──────────────────────────────┤
-│ ⚖️ Policy-as-Code (OPA)     │ Rego Policy Evaluation       │
-└──────────────────────────────┴──────────────────────────────┘
-         │
-         ▼ (Pass)
-[Merge to Main] ──> [Manual Approval for Prod] ──> [Terraform Apply]
-```
-
-### Policy as Code (OPA / Rego Examples)
-
-This project embeds guardrails in `./policies`:
-
-- **Storage Account Hardening** ([`deny-public-storage.rego`](policies/deny-public-storage.rego)):
-  - Denies any storage account created with public network access enabled.
-  - Requires HTTPS-only traffic and minimum TLS version 1.2.
-- **Mandatory Cost Tagging** ([`require-tags.rego`](policies/require-tags.rego)):
-  - Enforces `Environment`, `Owner`, `CostCenter`, and `Project` tags on resource groups, VNets, and subnets.
-  - Restricts `Environment` to `dev`, `staging`, or `prod`.
-- **Regional Compliance** ([`allowed-regions.rego`](policies/allowed-regions.rego)):
-  - Restricts resource deployments strictly to authorized corporate regions (`eastus`, `eastus2`, `westus2`, `centralus`).
-
----
-
-## 📁 Repository Structure
-
-```
-├── .github/
-│   └── workflows/
-│       ├── security-scan.yml      # PR quality gate: tf fmt, validate, Checkov, Trivy, OPA
-│       └── terraform-deploy.yml   # Multi-environment CD pipeline with manual gates
-├── environments/
-│   ├── dev/                       # Development environment configuration
-│   │   ├── backend.tf             # Remote state backend
-│   │   ├── main.tf                # Dev infrastructure orchestration
-│   │   ├── variables.tf           # Environment variables & tags
-│   │   ├── outputs.tf             # Dev outputs
-│   │   └── terraform.tfvars.example
-│   └── prod/                      # Production environment configuration
-│       ├── backend.tf             # Remote state backend
-│       ├── main.tf                # Prod infrastructure (Premium FW, VPN, 90d logs)
-│       ├── variables.tf           # Production variables & tags
-│       ├── outputs.tf             # Prod outputs
-│       └── terraform.tfvars.example
-├── modules/
-│   ├── network-hub/               # Hub VNet, Azure Firewall, Bastion, VPN Gateway
-│   ├── network-spoke/             # Spoke VNet, Subnets, NSGs, UDR Route Tables, Peering
-│   └── monitoring/                # Log Analytics Workspace, Microsoft Sentinel, Action Groups
-├── policies/                      # OPA Rego governance rules
-│   ├── allowed-regions.rego
-│   ├── deny-public-storage.rego
-│   └── require-tags.rego
-├── scripts/
-│   ├── deploy.sh                  # Bash deployment wrapper script
-│   ├── deploy.ps1                 # PowerShell deployment wrapper (Windows native)
-│   ├── init-backend.sh            # Bash Azure storage backend provisioner
-│   └── init-backend.ps1           # PowerShell Azure storage backend provisioner
-├── docs/
-│   └── diagrams/                  # Diagram source scripts & generated visuals
-│       ├── advanced_design.py     # Python Diagrams source for architecture
-│       ├── network_diagram.py     # Python Diagrams source for IP addressing
-│       ├── modern_cloud_architecture_2025.png
-│       ├── secure_landing_zone_lld.png
-│       └── network_addressing_diagram.png
-├── ARCHITECTURE.md                # Comprehensive architectural specification guide
-├── LICENSE                        # MIT License
-└── README.md                      # Primary project documentation
-```
-
----
-
-## 🚀 Quick Start Guide
-
-### 1. Prerequisites
-- [Terraform >= 1.6.0](https://developer.hashicorp.com/terraform/downloads)
-- [Azure CLI >= 2.50.0](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-- An active Azure subscription with `Owner` or `Contributor` + `User Access Administrator` permissions.
-
-### 2. Authenticate to Azure
-```bash
-az login
-az account set --subscription "<your-subscription-id>"
-```
-
-### 3. Initialize Remote State Backend
-Use the automated provisioning script to create an encrypted Azure Storage Account with TLS 1.2 and blob public access disabled:
-
-**Linux / macOS / WSL:**
-```bash
-chmod +x scripts/init-backend.sh
-./scripts/init-backend.sh
-```
-
-**Windows PowerShell:**
-```powershell
-.\scripts\init-backend.ps1 -Location eastus
-```
-
-Update `environments/dev/backend.tf` and `environments/prod/backend.tf` with the output storage account details.
-
-### 4. Deploying via Helper Scripts
-
-#### Development Environment
-**Linux / macOS:**
-```bash
-# Plan
-./scripts/deploy.sh dev plan
-
-# Apply
-./scripts/deploy.sh dev apply
-```
-
-**Windows PowerShell:**
-```powershell
-# Plan
-.\scripts\deploy.ps1 -Environment dev -Action plan
-
-# Apply
-.\scripts\deploy.ps1 -Environment dev -Action apply
-```
-
-#### Production Environment
-Production deployments feature an interactive safety prompt before executing destructive or high-cost changes:
-```powershell
-.\scripts\deploy.ps1 -Environment prod -Action plan
-.\scripts\deploy.ps1 -Environment prod -Action apply
-```
-
----
-
-## ⚙️ CI/CD Pipeline Setup (GitHub Actions)
-
-To execute deployments automatically via GitHub Actions, configure the following secrets in your repository settings (**Settings > Secrets and variables > Actions**):
-
-| Secret Name | Description |
+| Directory | Purpose |
 | :--- | :--- |
-| `AZURE_CLIENT_ID` | Service Principal App ID |
-| `AZURE_CLIENT_SECRET` | Service Principal Password / Secret |
-| `AZURE_SUBSCRIPTION_ID` | Target Azure Subscription ID |
-| `AZURE_TENANT_ID` | Azure Active Directory Tenant ID |
+| `environments/dev`, `environments/prod` | Root configurations, backend examples, mock tests and provider locks |
+| `modules/network-hub` | Firewall, Bastion, VPN and hub tests |
+| `modules/network-spoke` | Subnets, NSGs, peerings and default routes |
+| `modules/monitoring` | Workspace, Sentinel onboarding and action group |
+| `policies` | Rego v1 policies and regression tests |
+| `scripts` | Cross-platform deployment and plan-policy checks |
+| `tests` | Policy CLI failure-path tests |
 
----
+## Validate without an Azure account
 
-## 📄 License
+Install Terraform **1.16.2**, OPA **1.20.2**, and Node.js **22** to match CI. The provider remains on AzureRM **3.117.1**; upgrading to 4.x is a separate migration.
 
-This project is open-source under the [MIT License](LICENSE).
+From the repository root:
 
----
+```sh
+terraform fmt -check -recursive
+terraform -chdir=environments/dev init -backend=false -input=false -lockfile=readonly
+terraform -chdir=environments/dev validate
+terraform -chdir=environments/dev test
+terraform -chdir=environments/prod init -backend=false -input=false -lockfile=readonly
+terraform -chdir=environments/prod validate
+terraform -chdir=environments/prod test
+terraform -chdir=modules/network-hub init -backend=false -input=false -lockfile=readonly
+terraform -chdir=modules/network-hub test
+opa check --strict policies/
+opa test policies/ -v
+node --test tests/policy-cli.test.mjs
+node scripts/test-plans.mjs environments/dev
+node scripts/test-plans.mjs environments/prod
+node scripts/test-plans.mjs modules/network-hub
+```
 
-<div align="center">
-  <b>Authored by <a href="https://github.com/mohamed-abdelhedi">Mohamed Abdelhedi</a></b><br/>
-  <i>Cloud, DevOps & Security Architecture</i>
-</div>
+These tests use a mocked Azure provider and never create Azure resources. The test-plans script also feeds the generated resource plans into OPA. Provider/plugin downloads still require internet access.
+
+Security scans used in CI:
+
+```sh
+python -m pip install checkov==3.3.16
+checkov -d . --framework terraform --compact
+trivy config . --severity HIGH,CRITICAL --exit-code 1
+```
+
+CI pins Trivy to **0.74.0**. Checkov failures and high/critical Trivy findings block the workflow. Dependencies and actions are pinned for reproducibility; Dependabot proposes updates.
+
+## Deploy to your own Azure subscription
+
+Azure Firewall, Bastion, VPN and log ingestion incur charges. Review the plan and Azure pricing before applying. Nothing in the pull-request or push workflow deploys infrastructure.
+
+1. Authenticate with `az login` and select your subscription. Use an identity with the required resource permissions and **Storage Blob Data Contributor** on the state backend.
+2. Use an existing secured state backend, or run `scripts/init-backend.sh` / `scripts/init-backend.ps1`. The helpers create Azure resources, require existing blob-data permissions, and use Entra authentication instead of retrieving storage keys.
+3. Copy `environments/dev/backend.hcl.example` to `backend.hcl` in the same directory and fill in your backend details. Copy `terraform.tfvars.example` to `terraform.tfvars` and set your region, ownership tags and real alert address. Repeat for prod when needed. Local values and plans are gitignored.
+4. If switching from offline validation to a real backend for the first time, run `terraform -chdir=environments/dev init -reconfigure -backend-config=backend.hcl`. For an existing deployment, migrate existing state deliberately instead of initializing an empty state.
+5. Plan through the helper:
+
+```sh
+node scripts/deploy.mjs dev plan
+node scripts/deploy.mjs dev apply
+```
+
+Equivalent wrappers: `bash scripts/deploy.sh dev plan` or `.\scripts\deploy.ps1 -Environment dev -Action plan` in PowerShell. The helper regenerates a plan, checks it with OPA, and requires an explicit typed confirmation before applying. It stops on command failures and removes temporary JSON plans. `destroy` uses the same flow with a destroy plan.
+
+To evaluate an independently generated plan:
+
+```sh
+terraform -chdir=environments/dev show -json tfplan > plan.json
+node scripts/check-plan.mjs plan.json
+```
+
+Plan JSON can contain secrets. Keep it local and delete it after use; the workflows do not upload plan artifacts.
+
+### GitHub Actions deployment
+
+The manual **Terraform Plan or Apply** workflow runs only from `main` and defaults to **plan**. It runs all quality gates before obtaining Azure credentials.
+
+Configure a GitHub environment named `dev` or `prod` and an Azure federated identity with subject `repo:mohamed-abdelhedi/azure-secure-landing-zone:environment:dev` (or `:prod`). Follow [GitHub's Azure OIDC setup](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-azure). No client secret is required.
+
+Set these **environment variables** in GitHub: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `BACKEND_RESOURCE_GROUP`, `BACKEND_STORAGE_ACCOUNT`, `BACKEND_CONTAINER`, and `ALERT_EMAIL`.
+
+Production apply also requires an environment reviewer rule; the workflow refuses to apply if it cannot verify that rule. Configure branch restrictions and reviewers appropriate to your deployment. OIDC trust and environment protection must be configured in your own accounts; the repository does not create that access.
+
+## Next improvements
+
+- Validate a real dev deployment, capture connectivity and log-ingestion evidence, and add a destroy/recovery runbook.
+- Add explicit workload isolation rules and Private Link/DNS with tests before adding applications or databases.
+- Add Sentinel analytics rules with sample events and tested incident workflows.
+- Introduce cost budgets and a deliberate AzureRM 4.x migration.
+
+## Author and license
+
+[Mohamed Abdelhedi](https://github.com/mohamed-abdelhedi) · [MIT License](LICENSE)

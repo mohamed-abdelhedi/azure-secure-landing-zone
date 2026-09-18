@@ -2,12 +2,20 @@ variable "location" {
   description = "Azure region for resources"
   type        = string
   default     = "eastus"
+  validation {
+    condition     = contains(["eastus", "eastus2", "westus2", "centralus"], var.location)
+    error_message = "Choose an approved US region."
+  }
 }
 
 variable "environment" {
   description = "Environment name"
   type        = string
   default     = "dev"
+  validation {
+    condition     = var.environment == "dev"
+    error_message = "This root module is only for dev."
+  }
 }
 
 variable "owner" {
@@ -41,6 +49,6 @@ locals {
     CostCenter  = var.cost_center
     Project     = var.project
     ManagedBy   = "Terraform"
-    Repository  = "github.com/mohamed-abdelhedi/terraform"
+    Repository  = "github.com/mohamed-abdelhedi/azure-secure-landing-zone"
   }
 }

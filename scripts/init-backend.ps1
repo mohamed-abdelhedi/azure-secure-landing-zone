@@ -1,76 +1,28 @@
-<#
-.SYNOPSIS
-    Initializes Azure Storage Account for Terraform remote state.
-.DESCRIPTION
-    Creates the Resource Group, Storage Account (TLS 1.2, private blob access), and Blob Container for remote state.
-.EXAMPLE
-    .\scripts\init-backend.ps1 -Location eastus
-#>
-
+<#!
+Creates an Azure Storage backend using Entra authentication. Requires existing
+resource deployment permissions and Storage Blob Data Contributor access.
+!#>
 [CmdletBinding()]
-param (
-    [string]$ResourceGroupName = "rg-terraform-state-prod",
-    [string]$Location = "eastus",
-    [string]$ContainerName = "tfstate"
+param(
+    [string]$ResourceGroupName = 'rg-terraform-state',
+    [string]$Location = 'eastus',
+    [string]$ContainerName = 'tfstate',
+    [string]$StorageAccountName = ('sttfstate' + [guid]::NewGuid().ToString('N').Substring(0,8))
 )
-
-$ErrorActionPreference = "Stop"
-
-$RandomSuffix = -join ((97..122) + (48..57) | Get-Random -Count 6 | ForEach-Object { [char]$_ })
-$StorageAccountName = "sttfstate$RandomSuffix"
-
-Write-Host "🚀 Initializing Azure Storage Backend for Terraform State..." -ForegroundColor Cyan
-Write-Host "Resource Group  : $ResourceGroupName"
-Write-Host "Storage Account : $StorageAccountName"
-Write-Host "Container Name  : $ContainerName"
-Write-Host "Location        : $Location"
-
-# Verify Azure CLI login
-try {
-    az account show --output none
+$ErrorActionPreference = 'Stop'
+function Invoke-Azure {
+    param([string[]]$Arguments)
+    & az @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "Azure CLI failed (exit $LASTEXITCODE). Backend setup stopped." }
 }
-catch {
-    Write-Host "Logging into Azure CLI..." -ForegroundColor Yellow
-    az login
-}
-
-# Create Resource Group
-Write-Host "`n📦 Creating resource group '$ResourceGroupName'..." -ForegroundColor Yellow
-az group create `
-    --name $ResourceGroupName `
-    --location $Location `
-    --tags Purpose="Terraform State" ManagedBy="Script" | Out-Null
-
-# Create Storage Account
-Write-Host "💾 Creating storage account '$StorageAccountName'..." -ForegroundColor Yellow
-az storage account create `
-    --name $StorageAccountName `
-    --resource-group $ResourceGroupName `
-    --location $Location `
-    --sku Standard_LRS `
-    --encryption-services blob `
-    --https-only true `
-    --min-tls-version TLS1_2 `
-    --allow-blob-public-access false | Out-Null
-
-# Retrieve Storage Account Key
-Write-Host "🔑 Retrieving storage account key..." -ForegroundColor Yellow
-$AccountKey = az storage account keys list `
-    --resource-group $ResourceGroupName `
-    --account-name $StorageAccountName `
-    --query '[0].value' -o tsv
-
-# Create Blob Container
-Write-Host "📂 Creating blob container '$ContainerName'..." -ForegroundColor Yellow
-az storage container create `
-    --name $ContainerName `
-    --account-name $StorageAccountName `
-    --account-key $AccountKey | Out-Null
-
-Write-Host "`n✅ Terraform remote backend provisioned successfully!" -ForegroundColor Green
-Write-Host "`n📋 Update your backend.tf files with the following configuration:" -ForegroundColor Cyan
-Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "resource_group_name  = `"$ResourceGroupName`""
-Write-Host "storage_account_name = `"$StorageAccountName`""
-Write-Host "container_name       = `"$ContainerName`""
-Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
+Invoke-Azure @('account','show','--output','none')
+Invoke-Azure @('group','create','--name',$ResourceGroupName,'--location',$Location,'--tags','Purpose=TerraformState','ManagedBy=Script','--output','none')
+Invoke-Azure @('storage','account','create','--name',$StorageAccountName,'--resource-group',$ResourceGroupName,'--location',$Location,'--sku','Standard_LRS','--https-only','true','--min-tls-version','TLS1_2','--allow-blob-public-access','false','--allow-shared-key-access','false','--output','none')
+Invoke-Azure @('storage','account','blob-service-properties','update','--account-name',$StorageAccountName,'--resource-group',$ResourceGroupName,'--enable-versioning','true','--enable-delete-retention','true','--delete-retention-days','7','--output','none')
+Invoke-Azure @('storage','container','create','--name',$ContainerName,'--account-name',$StorageAccountName,'--auth-mode','login','--public-access','off','--output','none')
+Write-Output 'Backend created. Copy these values into the environment backend.hcl:'
+Write-Output ('resource_group_name = "{0}"' -f $ResourceGroupName)
+Write-Output ('storage_account_name = "{0}"' -f $StorageAccountName)
+Write-Output ('container_name = "{0}"' -f $ContainerName)
+Write-Output 'use_azuread_auth = true'
+Write-Output 'Keep a separate state key per environment. No role assignments were created.'

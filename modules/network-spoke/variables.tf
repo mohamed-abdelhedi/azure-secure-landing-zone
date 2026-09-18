@@ -21,10 +21,10 @@ variable "spoke_vnet_address_space" {
 variable "subnets" {
   description = "Map of subnets to create in the spoke VNet"
   type = map(object({
-    name             = string
-    address_prefixes = list(string)
+    name              = string
+    address_prefixes  = list(string)
     service_endpoints = list(string)
-    delegations      = list(string)
+    delegations       = list(string)
   }))
   default = {}
 }

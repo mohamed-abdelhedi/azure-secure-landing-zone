@@ -55,7 +55,7 @@ resource "azurerm_subnet_network_security_group_association" "spoke" {
   network_security_group_id = azurerm_network_security_group.spoke[each.key].id
 }
 
-# Route Table - Force all traffic through Azure Firewall
+# Route Table - Route default outbound traffic through Azure Firewall
 resource "azurerm_route_table" "spoke" {
   name                = "rt-${var.spoke_vnet_name}"
   location            = var.location
@@ -68,7 +68,7 @@ resource "azurerm_route_table" "spoke" {
     next_hop_in_ip_address = var.firewall_private_ip
   }
 
-  tags = merge(var.tags, { "Purpose" = "Force Tunnel" })
+  tags = merge(var.tags, { "Purpose" = "Default Egress Route" })
 }
 
 # Associate Route Table with Subnets
@@ -93,10 +93,10 @@ resource "azurerm_virtual_network_peering" "spoke_to_hub" {
 # VNet Peering: Hub to Spoke (requires hub resource group)
 resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   name                      = "peer-hub-to-${var.spoke_vnet_name}"
-  resource_group_name       = var.resource_group_name  # Assumes same RG
+  resource_group_name       = var.resource_group_name # Assumes same RG
   virtual_network_name      = var.hub_vnet_name
   remote_virtual_network_id = azurerm_virtual_network.spoke.id
   allow_forwarded_traffic   = true
-  allow_gateway_transit     = true
+  allow_gateway_transit     = var.use_remote_gateways
   use_remote_gateways       = false
 }

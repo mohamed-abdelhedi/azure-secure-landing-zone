@@ -1,25 +1,33 @@
-package terraform.azure.tagging
+package landingzone
 
-import future.keywords.in
+import rego.v1
 
-required_tags := ["Environment", "Owner", "CostCenter", "Project"]
+required_tags := {"Environment", "Owner", "CostCenter", "Project"}
 
-# Deny resources without required tags
-deny[msg] {
-    resource := input.resource[resource_type][name]
-    resource_type in ["azurerm_resource_group", "azurerm_virtual_network", "azurerm_subnet"]
-    
-    missing_tags := [tag | tag := required_tags[_]; not resource.tags[tag]]
-    count(missing_tags) > 0
-    
-    msg := sprintf("Resource '%s' of type '%s' is missing required tags: %v", [name, resource_type, missing_tags])
+# Azure subnets, peerings, diagnostics and associations do not support tags.
+tagged_types := {
+	"azurerm_resource_group", "azurerm_virtual_network", "azurerm_network_security_group",
+	"azurerm_route_table", "azurerm_public_ip", "azurerm_firewall", "azurerm_firewall_policy",
+	"azurerm_virtual_network_gateway", "azurerm_bastion_host",
+	"azurerm_log_analytics_workspace", "azurerm_monitor_action_group", "azurerm_storage_account",
 }
 
-# Validate Environment tag values
-deny[msg] {
-    resource := input.resource[_][name]
-    env := resource.tags.Environment
-    not env in ["dev", "staging", "prod"]
-    
-    msg := sprintf("Resource '%s' has invalid Environment tag value '%s'. Must be dev, staging, or prod.", [name, env])
+deny contains sprintf("%s: missing or empty tag %s", [r.address, tag]) if {
+	some r in resources
+	r.type in tagged_types
+	some tag in required_tags
+	tags := object.get(r.change.after, "tags", {})
+	not nonempty_tag(tags, tag)
+}
+
+nonempty_tag(tags, tag) if {
+	is_string(tags[tag])
+	trim_space(tags[tag]) != ""
+}
+
+deny contains sprintf("%s: Environment tag must be dev, staging or prod", [r.address]) if {
+	some r in resources
+	r.type in tagged_types
+	tags := object.get(r.change.after, "tags", {})
+	not object.get(tags, "Environment", "") in {"dev", "staging", "prod"}
 }
