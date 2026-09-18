@@ -65,7 +65,7 @@ variable "firewall_sku" {
   description = "Azure Firewall SKU (Standard or Premium)"
   type        = string
   default     = "Premium"
-  
+
   validation {
     condition     = contains(["Standard", "Premium"], var.firewall_sku)
     error_message = "Firewall SKU must be Standard or Premium."

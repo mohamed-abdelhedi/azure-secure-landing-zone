@@ -1,13 +1,8 @@
 terraform {
-  required_version = ">= 1.6.0"
-  
-  backend "azurerm" {
-    resource_group_name  = "rg-terraform-state-prod"
-    storage_account_name = "sttfstatepro12345"
-    container_name       = "tfstate"
-    key                  = "dev.terraform.tfstate"
-  }
-  
+  required_version = ">= 1.7.0, < 2.0.0"
+
+  backend "azurerm" {}
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -19,7 +14,7 @@ terraform {
 provider "azurerm" {
   features {
     key_vault {
-      purge_soft_delete_on_destroy = true
+      purge_soft_delete_on_destroy = false
     }
   }
 }

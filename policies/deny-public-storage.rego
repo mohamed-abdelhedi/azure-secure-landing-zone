@@ -1,32 +1,17 @@
-package terraform.azure.storage
+package landingzone
 
-# Deny public access to storage accounts
-deny[msg] {
-    resource := input.resource.azurerm_storage_account[_]
-    resource.public_network_access_enabled == true
-    
-    msg := sprintf("Storage account '%s' has public network access enabled. This violates security policy.", [resource.name])
+import rego.v1
+
+storage_requirements := {
+	"public_network_access_enabled": false,
+	"enable_https_traffic_only": true,
+	"min_tls_version": "TLS1_2",
+	"allow_nested_items_to_be_public": false,
 }
 
-# Require HTTPS-only traffic
-deny[msg] {
-    resource := input.resource.azurerm_storage_account[_]
-    not resource.enable_https_traffic_only
-    
-    msg := sprintf("Storage account '%s' must enable HTTPS-only traffic.", [resource.name])
-}
-
-# Require minimum TLS version
-deny[msg] {
-    resource := input.resource.azurerm_storage_account[_]
-    not resource.min_tls_version
-    
-    msg := sprintf("Storage account '%s' must specify minimum TLS version 1.2.", [resource.name])
-}
-
-deny[msg] {
-    resource := input.resource.azurerm_storage_account[_]
-    resource.min_tls_version != "TLS1_2"
-    
-    msg := sprintf("Storage account '%s' must use TLS 1.2 or higher.", [resource.name])
+deny contains sprintf("%s: storage setting %s must equal %v and be known", [r.address, key, expected]) if {
+	some r in resources
+	r.type == "azurerm_storage_account"
+	some key, expected in storage_requirements
+	object.get(r.change.after, key, null) != expected
 }

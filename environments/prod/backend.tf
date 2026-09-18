@@ -1,12 +1,7 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.7.0, < 2.0.0"
 
-  backend "azurerm" {
-    resource_group_name  = "rg-terraform-state-prod"
-    storage_account_name = "sttfstatepro12345"
-    container_name       = "tfstate"
-    key                  = "prod.terraform.tfstate"
-  }
+  backend "azurerm" {}
 
   required_providers {
     azurerm = {

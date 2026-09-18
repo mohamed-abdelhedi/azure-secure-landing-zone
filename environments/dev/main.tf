@@ -1,6 +1,6 @@
 # Resource Group for Dev Environment
 resource "azurerm_resource_group" "dev" {
-  name     = "rg-landingzone-dev-eastus"
+  name     = "rg-landingzone-dev-${var.location}"
   location = var.location
 
   tags = local.common_tags
@@ -12,7 +12,7 @@ module "hub_network" {
 
   resource_group_name    = azurerm_resource_group.dev.name
   location               = azurerm_resource_group.dev.location
-  hub_vnet_name          = "vnet-hub-dev-eastus-001"
+  hub_vnet_name          = "vnet-hub-dev-${var.location}-001"
   hub_vnet_address_space = ["10.0.0.0/16"]
 
   firewall_subnet_prefix = "10.0.0.0/26"
@@ -20,7 +20,7 @@ module "hub_network" {
   bastion_subnet_prefix  = "10.0.2.0/26"
 
   environment        = var.environment
-  enable_vpn_gateway = false     # Disabled in dev to save costs
+  enable_vpn_gateway = false # Disabled in dev to save costs
   enable_bastion     = true
   firewall_sku       = "Standard" # Standard SKU in dev (Premium in prod)
 
@@ -33,7 +33,7 @@ module "app_spoke" {
 
   resource_group_name      = azurerm_resource_group.dev.name
   location                 = azurerm_resource_group.dev.location
-  spoke_vnet_name          = "vnet-app-dev-eastus-001"
+  spoke_vnet_name          = "vnet-app-dev-${var.location}-001"
   spoke_vnet_address_space = ["10.1.0.0/16"]
 
   hub_vnet_id         = module.hub_network.hub_vnet_id
@@ -69,7 +69,7 @@ module "data_spoke" {
 
   resource_group_name      = azurerm_resource_group.dev.name
   location                 = azurerm_resource_group.dev.location
-  spoke_vnet_name          = "vnet-data-dev-eastus-001"
+  spoke_vnet_name          = "vnet-data-dev-${var.location}-001"
   spoke_vnet_address_space = ["10.2.0.0/16"]
 
   hub_vnet_id         = module.hub_network.hub_vnet_id
@@ -99,7 +99,7 @@ module "data_spoke" {
   depends_on = [module.hub_network]
 }
 
-# Central Monitoring & SIEM/SOAR Module
+# Central logging and Sentinel onboarding
 module "monitoring" {
   source = "../../modules/monitoring"
 
@@ -112,4 +112,19 @@ module "monitoring" {
   tags                = local.common_tags
 
   depends_on = [azurerm_resource_group.dev]
+}
+
+# Send Firewall logs and metrics to the Sentinel-connected workspace.
+resource "azurerm_monitor_diagnostic_setting" "firewall" {
+  name                           = "firewall-to-log-analytics"
+  target_resource_id             = module.hub_network.firewall_id
+  log_analytics_workspace_id     = module.monitoring.workspace_id
+  log_analytics_destination_type = "Dedicated"
+  enabled_log {
+    category_group = "allLogs"
+  }
+  metric {
+    category = "AllMetrics"
+    enabled  = true
+  }
 }

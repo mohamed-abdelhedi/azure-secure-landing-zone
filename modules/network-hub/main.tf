@@ -59,6 +59,7 @@ resource "azurerm_firewall" "hub" {
   sku_name            = "AZFW_VNet"
   sku_tier            = var.firewall_sku
   firewall_policy_id  = azurerm_firewall_policy.hub.id
+  threat_intel_mode   = "Deny"
 
   ip_configuration {
     name                 = "configuration"
@@ -71,28 +72,21 @@ resource "azurerm_firewall" "hub" {
 
 # Firewall Policy with IDPS (Premium only)
 resource "azurerm_firewall_policy" "hub" {
-  name                = "afwp-${var.environment}-${var.location}"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  sku                 = var.firewall_sku
+  name                     = "afwp-${var.environment}-${var.location}"
+  location                 = var.location
+  resource_group_name      = var.resource_group_name
+  sku                      = var.firewall_sku
+  threat_intelligence_mode = "Deny"
 
   # Enable IDPS for Premium SKU
   dynamic "intrusion_detection" {
     for_each = var.firewall_sku == "Premium" ? [1] : []
     content {
-      mode = "Alert"
+      mode = "Deny"
     }
   }
 
-  # Enable TLS Inspection for Premium SKU
-  dynamic "tls_certificate" {
-    for_each = var.firewall_sku == "Premium" ? [] : []
-    content {
-      key_vault_secret_id = ""  # Add Key Vault certificate ID here
-      name                = "tls-inspection"
-    }
-  }
-
+  # TLS inspection requires a separately configured CA and is not enabled.
   dns {
     proxy_enabled = true
   }
@@ -146,7 +140,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "application_rules" {
         type = "Https"
         port = 443
       }
-      source_addresses  = ["*"]
+      source_addresses = ["*"]
       destination_fqdns = [
         "*.windowsupdate.microsoft.com",
         "*.update.microsoft.com",
@@ -160,7 +154,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "application_rules" {
         type = "Https"
         port = 443
       }
-      source_addresses  = ["*"]
+      source_addresses = ["*"]
       destination_fqdns = [
         "*.ods.opinsights.azure.com",
         "*.oms.opinsights.azure.com",
@@ -221,6 +215,7 @@ resource "azurerm_public_ip" "bastion" {
 
 # Azure Bastion
 resource "azurerm_bastion_host" "hub" {
+  depends_on          = [azurerm_subnet_network_security_group_association.bastion]
   count               = var.enable_bastion ? 1 : 0
   name                = "bas-${var.environment}-${var.location}"
   location            = var.location
